@@ -4,7 +4,7 @@ import shutil
 from sys import argv
 
 def cmd_get():
-	"""docstring for cmd_get"""
+	"""Get command"""
 	print("-----")
 	print(">1.List file(s)")
 	print(">2.Rename file(s)")
@@ -27,8 +27,9 @@ def cmd_dealing(cmd):
 def list_flies():
 	"""docstring for list_flies"""
 	print("-----")
-	print("The files are listed as belows:")
-	file_list = os.listdir()
+
+	print("The files are listed as belows(files only):")
+	file_list = file_filter(os.listdir(), ["",".py"])
 	list_num = 0
 	for file_item in file_list:
 		print("+%d. %s" %(list_num, file_item))
@@ -41,19 +42,39 @@ def rename_files():
 	print("-----")
 	name = get_name()
 	intv = get_intv()
-	file_list = os.listdir()
-	file_num = 0
+	#file_list = os.listdir()
+	#exclude .py source files and hidden file(.gitignore like) and directories
+	file_list = file_filter(os.listdir(), ["",".py"])
+	file_num = len(file_list)
+	if file_num == 0:
+		print("No files in this directory!!")
+		return
+
+	max_str_len = len(str(file_num))
+	file_index = 0
 	input("...press enter to move on")
 	for file_item in file_list:
 		root, ext = os.path.splitext(file_item)
 		print(file_item, end = " -> ")
-		if ext != ".py" and os.path.isfile(file_item) == True:
-			new_name = name + str(file_num) + ext
-			print(new_name)
-			os.rename(file_item, new_name)
-			file_num += intv
-	print("There are %d files renamed." %file_num)
+		zeros = "0"*(max_str_len - len(str(file_index)))
+		new_name = name + zeros +str(file_index) + ext
+		print(new_name)
+		#input("..next-->") # a debug line
+		os.rename(file_item, new_name)
+		file_index += intv
+	print("There are %d files renamed." %file_index)
 	pass
+
+def file_filter(dir_list, exclude_types):
+	"""docstring for file_filter"""
+	file_list = []
+	for i in dir_list:
+		# elcude directories and indicated types 
+		root, ext = os.path.splitext(i)
+		if ext not in exclude_types and os.path.isfile(i) == True:
+			file_list.append(i)
+	return file_list
+	pass	
 
 def get_name():
 	"""docstring for get_name"""
