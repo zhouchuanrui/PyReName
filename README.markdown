@@ -1,5 +1,6 @@
 # PyReName
-========
+
+-----
 
 ## Abstract
 
@@ -16,4 +17,21 @@ Or you can use the `doskey` cammand to make this script a global command under c
 1. Type `doskey rfs=Python rfs.py` in command line.
 
 Then you can use `rfs` to run the script in any directory under `cmd.exe`. It's much easier, right?
+
+## For WinXP users
+
+Win7 users can use `Shift+Win+R` to call cmd.exe in current directory in explorer, so it is convinent to use `rfs` to rename your files under Win7.
+
+And for WinXP, you can run the following batch script:
+
+```bat
+Windows Registry Editor Version 5.00 
+
+[HKEY_CLASSES_ROOT\folder\shell\cmd]
+@="open CMD here"
+[HKEY_CLASSES_ROOT\folder\shell\cmd\command]
+@="cmd.exe /k cd %1"
+```
+
+It would creat an `open CMD here` item in your mouse-right-click menu, and then you can use `rfs` as easy as a Win7 user.
 
