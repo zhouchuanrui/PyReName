@@ -1,7 +1,7 @@
 ;-----DATA SEGMENT
 ; register file
 ;; PAGE0
-.**local INDF     0x00
+.local INDF     0x00
 .local TMR0     0x01
 .local PCL      0x02 
 .local STATUS   0x03 ; WKPF|GPA1|GPA0|TO|PD|Z|DC|C

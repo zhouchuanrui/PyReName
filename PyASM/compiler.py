@@ -21,6 +21,8 @@ class Compiler(object):
         self.instructions = {}
         self.source = []
         self.debug_flag = 1
+        self.macros = {}
+        self.addr_labels = {}
         
     def getInstruction(self, name, opcode, word_len, opr1_len, opr2_len):
         """docstring for getInstruction"""
@@ -40,18 +42,102 @@ class Compiler(object):
     def parseSource(self):
         """docstring for parseSource"""
         sp = re.compile(r'\s*,?\s*')
-        illegal_char = re.compile(r'[^a-zA-Z0-9\.,\s]')
+        illegal_char = re.compile(r'[^_a-zA-Z0-9.,+\-:$ ]')
         ln = 0
         for line in self.source:
             ln += 1
-            if illegal_char.match(line):
+            if illegal_char.findall(line):
+                self.dprint(illegal_char.findall(line))
                 printError("Illegal char in line: %d\n\t%s"
                         %(ln, line))
+            tokens = sp.split(line)
+            if len(tokens) == 1 and tokens[0] == '':
+                continue
+            if tokens[0].lower() == '.local':
+                self.parseMacro(tokens[1:], ln)
+            elif tokens[0].lower() == '.org':
+                pass
+            else:
+                #print("Left line: "+line)
+                pass
+        pass
+
+    def parseMacro(self, tokens, ln):
+        """docstring for parseMacros"""
+        if len(tokens) != 2:
+            printError("Wrong arguments number in .local definition in line: %d\n\t%s"
+                    %(ln, self.source[ln-1]))
+        
+        macro, value = tokens
+        if macro in self.macros.keys():
+            printWarning("Re-define MACRO:%s in \nline[%d]:\t%s\nand line[%d]:\t%s"
+                    %(macro, ln, self.source[ln-1], self.macros[macro][0], self.source[self.macros[macro][0]-1]))
+        
+        value_int = self.parseValueInMacro(value, ln)
+        self.macros[macro] = (ln, value_int)
+
+        pass
+
+    def parseValueInMacro(self, value, ln):
+        """docstring for parseValueInMacro"""
+        if value in self.macros.keys():
+            return self.macros[value][1]
+
+        return self.parseConst(value, ln)
+        pass
+
+    def parseConst(self, value, ln):
+        """docstring for parseConst
+            check format of input value
+            and return transformed int
+        """
+        value = value.lower()
+        illegal_char = re.compile(r'[^0-9a-fxhoq]')
+        if illegal_char.findall(value):
+            self.dprint(illegal_char.findall(value))
+            printError("Illegal CONST: %s in line: %d\n\t%s"
+                    %(value, ln, self.source[ln-1]))
+        
+        if value[0:2] == '0x':
+            try:
+                value_int = int(value[2:], 16)
+            except ValueError:
+                printError("Illegal 0x.. hex CONST: %s in line: %d\n\t%s"
+                        %(value, ln, self.source[ln-1]))
+            else:
+                return value_int
+        elif value[-1] == 'h':
+            try:
+                value_int = int(value[:-1], 16)
+            except ValueError:
+                printError("Illegal ..h hex CONST: %s in line: %d\n\t%s"
+                        %(value, ln, self.source[ln-1]))
+            else:
+                return value_int
+        elif value[-1] == 'o' or value[-1] == 'q':
+            try:
+                value_int = int(value[:-1], 8)
+            except ValueError:
+                printError("Illegal oct CONST: %s in line: %d\n\t%s"
+                        %(value, ln, self.source[ln-1]))
+            else:
+                return value_int
+        else:
+            try:
+                value_int = int(value, 10)
+            except ValueError:
+                printError("Illegal dec CONST: %s in line: %d\n\t%s"
+                        %(value, ln, self.source[ln-1]))
+            else:
+                return value_int
         pass
 
     def removeComment(self, s):
-        """docstring for removeComment"""
-        return re.sub('\s*;.*$', '',s)
+        """docstring for removeComment
+            remove comment starts with ';'
+            and spaces locates at each end of lines
+        """
+        return re.sub('\s*;.*$|\s+$', '',s)
         pass
 
     def dprint(self, s):
@@ -115,6 +201,8 @@ def main():
     fd.close()
 
     cc.parseSource()
+
+    print("Compile done!!")
 
 if __name__ == '__main__':
     main()
