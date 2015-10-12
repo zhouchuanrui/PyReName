@@ -14,16 +14,33 @@ class Instruction(object):
         self.opr1_len = int(opr1_len)
         self.opr2_len = int(opr2_len)
         
+    def printInstruction(self):
+        """docstring for printInstruction"""
+        print("Instruction: %s --> %s" %(self.name, self.opcode))
+        if self.opr1_len == 0 and self.opr2_len == 0 and self.word_len == 1:
+            print("prototype: %s" %self.name)
+        elif self.opr1_len == 0 and self.opr2_len == 0 and self.word_len == 2:
+            print("prototype: %s op" %self.name)
+        elif self.opr1_len != 0 and self.opr2_len == 0:
+            print("prototype: %s op" %self.name)
+        else:
+            print("prototype: %s op1, op2" %self.name)
+        pass
+
 class Compiler(object):
     """docstring for Compiler"""
     def __init__(self, arg):
         super(Compiler, self).__init__()
         self.arg = arg
-        self.instructions = {}
+        self.instructions = {} # {opcode:Instruction object} style
         self.source = []
         self.debug_flag = 1
-        self.macros = {}
-        self.addr_labels = {}
+        self.macros = {} # {macro:(define_line_number, const_int)} type
+        self.addr_labels = {} # {label:(address, define_line_number)} type
+        self.rom_codes = {} # {addr:(DB|INS, ln, tokens)}
+        self.compiled_abin = []
+        self.addr_limit = 2**11 - 1 # 2KB
+        self.word_len = 14
         
     def getInstruction(self, name, opcode, word_len, opr1_len, opr2_len):
         """docstring for getInstruction"""
@@ -50,25 +67,231 @@ class Compiler(object):
             ln += 1
             if illegal_char.findall(line):
                 self.dprint(illegal_char.findall(line))
-                printError("Illegal char in line: %d\n\t%s"
+                printErrorAndExit("Illegal char in line: %d\n\t%s"
                         %(ln, line))
             tokens = sp.split(line)
+
             if len(tokens) == 1 and tokens[0] == '':
                 continue
+
             if tokens[0].lower() == '.local':
                 self.parseMacro(tokens[1:], ln)
             elif tokens[0].lower() == '.org':
-                current_addr = self.parseOrg(tokens[1:], ln)
+                new_addr = self.parseOrg(tokens[1:], ln)
+                if new_addr < current_addr:
+                    printErrorAndExit("Address overlap caused by .ORG in line: %d\n\t%s"
+                            %(ln, self.source[ln-1]))
+
+                current_addr = new_addr
+                pass
+            elif tokens[0].lower()[-1] == ':':
+                label = tokens[0].lower()[:-1]
+                self.parseLabel(label, ln, current_addr)
+                if len(tokens) > 1:
+                    current_addr = self.parseInstruction(tokens[1:], ln, current_addr)
                 pass
             else:
-                #print("Left line: "+line)
+                current_addr = self.parseInstruction(tokens, ln, current_addr)
                 pass
+
+            if current_addr > self.addr_limit:
+                printErrorAndExit("Address exceed limit line: %d\n\t%s"
+                        %(ln, self.source[ln-1]))
         pass
+
+    def compile(self):
+        """docstring for compile"""
+        addr = 0
+
+        # fill abin with '111..11''
+        for i in range(self.addr_limit+1):
+            self.compiled_abin.append("1"*self.word_len)
+
+        for k, v in sorted(self.rom_codes.items()):
+            code_addr = k
+            code_type, ln, tokens = v
+            if code_type == 'DB':
+                self.compiled_abin[code_addr] = self.compileDB(v)
+            else:
+                ins_obj = self.instructions[tokens[0]]
+                if ins_obj.word_len == 2:
+                    two_word = self.compileTwoWordIns(ins_obj, tokens, ln, code_addr)
+                    self.compiled_abin[code_addr] = two_word[0]
+                    self.compiled_abin[code_addr+1] = two_word[1]
+                elif ins_obj.opr1_len == 0 and ins_obj.opr2_len ==0:
+                    self.compiled_abin[code_addr] = self.compileOpc(ins_obj)
+                elif ins_obj.opr1_len != 0 and ins_obj.opr2_len ==0:
+                    self.compiled_abin[code_addr] = self.compileOneOpr(ins_obj, tokens, ln, code_addr)
+                else:
+                    self.compiled_abin[code_addr] = self.compileTwoOpr(ins_obj, tokens, ln, code_addr)
+        pass
+
+    def compileTwoOpr(self, ins_obj, tokens, ln, caddr):
+        """docstring for compileTwoOpr"""
+        if len(tokens) != 3:
+            printErrorAndExit("Wrong oprands number in line: %d\n\t%s"
+                    %(ln, self.source[ln-1]))
+
+        opc, opr2, opr1 = tokens
+        regex = re.compile(r'[^01]+')
+        abin = regex.sub('', ins_obj.opcode)
+
+        if opr1 in self.addr_labels.keys():
+            data1 = self.addr_labels[opr1][0]
+        elif opr1 == '$':
+            data1 = caddr
+        elif opr1 in self.macros.keys():
+            data1 = self.macros[opr1][1]
+        else:
+            data1 = self.parseConst(opr1, ln) 
+
+        if opr2 in self.addr_labels.keys():
+            data2 = self.addr_labels[opr2][0]
+        elif opr2 == '$':
+            data2 = caddr
+        elif opr2 in self.macros.keys():
+            data2 = self.macros[opr2][1]
+        else:
+            data2 = self.parseConst(opr2, ln) 
+
+        abin = abin + self.compileData(data1, ins_obj.opr1_len, ln) + self.compileData(data2, ins_obj.opr2_len, ln)
+
+        if len(abin) != self.word_len:
+            ins_obj.printInstruction()
+            printErrorAndExit("Wrong instruction definition..")
+
+        return abin
+        pass
+
+    def compileOneOpr(self, ins_obj, tokens, ln, caddr):
+        """docstring for compileOneOpr"""
+        if len(tokens) != 2:
+            printErrorAndExit("Wrong oprands number in line: %d\n\t%s"
+                    %(ln, self.source[ln-1]))
+
+        opc, opr = tokens
+        regex = re.compile(r'[^01]+')
+        abin = regex.sub('', ins_obj.opcode)
+
+        if opr in self.addr_labels.keys():
+            data = self.addr_labels[opr][0]
+        elif opr == '$':
+            data = caddr
+        elif opr in self.macros.keys():
+            data = self.macros[opr][1]
+        else:
+            data = self.parseConst(opr, ln) 
+
+        abin = abin + self.compileData(data, ins_obj.opr1_len, ln)
+
+        if len(abin) != self.word_len:
+            ins_obj.printInstruction()
+            printErrorAndExit("Wrong instruction definition..")
+
+        return abin
+        pass
+
+    def compileOpc(self, ins_obj):
+        """docstring for compileOpc"""
+        abin = ins_obj.opcode
+        if len(abin) != self.word_len:
+            ins_obj.printInstruction()
+            printErrorAndExit("Wrong instruction definition..")
+
+        return abin
+        pass
+
+    def compileTwoWordIns(self, ins_obj, tokens, ln, caddr):
+        """docstring for compileTwoWordIns"""
+        if len(tokens) != 2:
+            printErrorAndExit("Wrong oprands number in line: %d\n\t%s"
+                    %(ln, self.source[ln-1]))
+
+        abin = []
+        opc, opr = tokens
+        abin.append(ins_obj.opcode)
+        if len(abin[0]) != self.word_len:
+            ins_obj.printInstruction()
+            printErrorAndExit("Wrong instruction definition..")
+
+        if opr in self.addr_labels.keys():
+            data = self.addr_labels[opr][0]
+        elif opr == '$':
+            data = caddr
+        elif opr in self.macros.keys():
+            data = self.macros[opr][1]
+        else:
+            data = self.parseConst(opr, ln) 
+
+        abin.append(self.compileData(data, self.word_len, ln))
+        return abin 
+        pass
+
+    def compileDB(self, source):
+        """docstring for compileDB"""
+        code_type, ln, tokens = source
+        abin = bin(tokens)[2:]
+        if len(abin) > self.word_len:
+            printWarning("DB data exceed max word length in line:%d\n\t%s" 
+                    %(ln, self.source[ln-1]));
+            return abin[:self.word_len]
+        
+        return '0'*(self.word_len-len(abin)) + abin
+        pass
+
+    def compileData(self, data_int, data_len, ln):
+        """docstring for compileData"""
+        abin = bin(data_int)[2:]
+        if len(abin) > data_len:
+            printWarning("Data exceed max word length in line:%d\n\t%s" 
+                    %(ln, self.source[ln-1]));
+            return abin[:data_len]
+        
+        return '0'*(data_len-len(abin)) + abin
+        pass
+
+    def parseInstruction(self, tokens, ln, addr):
+        """docstring for parseInstruction"""
+        if (tokens[0].lower() == '.db'):
+            self.parseDB(tokens[1:], ln, addr)
+            return addr+len(tokens[1:])
+        elif tokens[0].lower() not in self.instructions.keys():
+            printErrorAndExit("Unrecognized opcode <%s> in line:%d\n\t%s"
+                    %(tokens[0], ln, self.source[ln-1]))
+            return 0
+        else:
+            opc = tokens[0].lower()
+            self.rom_codes[addr] = ('INC', ln, tokens)
+            return addr + self.instructions[opc].word_len
+        pass    
+
+    def parseDB(self, datas, ln, addr):
+        """docstring for parseDB
+            return int DB data
+        """
+        for i in datas:
+            data = self.parseConst(i, ln)
+            self.rom_codes[addr] = ('DB', ln, data)
+            addr += 1
+        pass
+
+    def parseLabel(self, label, ln, addr):
+        """docstring for parseLabel"""
+        if label == '':
+            printErrorAndExit("Empty label in line: %d\n\t%s"
+                    %(ln, self.source[ln-1]))
+
+        if label in self.addr_labels.keys():
+            printWarning("Duplicate label:%s in \nline[%d]:\t%s\nand line[%d]:\t%s"
+                    %(label, ln, self.source[ln-1], self.addr_labels[label][1], self.source[self.addr_labels[label][1]-1]))
+
+        self.addr_labels[label] = (addr, ln)
+        pass    
 
     def parseOrg(self, tokens, ln):
         """docstring for parseOrg"""
         if len(tokens) != 1:
-            printError("Wrong arguments number in .local definition in line: %d\n\t%s"
+            printErrorAndExit("Wrong arguments number in .local definition in line: %d\n\t%s"
                     %(ln, self.source[ln-1]))
         
         return self.parseConst(tokens[0], ln)
@@ -82,7 +305,7 @@ class Compiler(object):
             store results in macros dict
         """
         if len(tokens) != 2:
-            printError("Wrong arguments number in .local definition in line: %d\n\t%s"
+            printErrorAndExit("Wrong arguments number in .local definition in line: %d\n\t%s"
                     %(ln, self.source[ln-1]))
         
         macro, value = tokens
@@ -112,14 +335,14 @@ class Compiler(object):
         illegal_char = re.compile(r'[^0-9a-fxhoq]')
         if illegal_char.findall(value):
             self.dprint(illegal_char.findall(value))
-            printError("Illegal CONST: %s in line: %d\n\t%s"
+            printErrorAndExit("Illegal CONST: %s in line: %d\n\t%s"
                     %(value, ln, self.source[ln-1]))
         
         if value[0:2] == '0x':
             try:
                 value_int = int(value[2:], 16)
             except ValueError:
-                printError("Illegal 0x.. hex CONST: %s in line: %d\n\t%s"
+                printErrorAndExit("Illegal 0x.. hex CONST: %s in line: %d\n\t%s"
                         %(value, ln, self.source[ln-1]))
             else:
                 return value_int
@@ -127,7 +350,7 @@ class Compiler(object):
             try:
                 value_int = int(value[:-1], 16)
             except ValueError:
-                printError("Illegal ..h hex CONST: %s in line: %d\n\t%s"
+                printErrorAndExit("Illegal ..h hex CONST: %s in line: %d\n\t%s"
                         %(value, ln, self.source[ln-1]))
             else:
                 return value_int
@@ -135,7 +358,7 @@ class Compiler(object):
             try:
                 value_int = int(value[:-1], 8)
             except ValueError:
-                printError("Illegal oct CONST: %s in line: %d\n\t%s"
+                printErrorAndExit("Illegal oct CONST: %s in line: %d\n\t%s"
                         %(value, ln, self.source[ln-1]))
             else:
                 return value_int
@@ -143,7 +366,7 @@ class Compiler(object):
             try:
                 value_int = int(value, 10)
             except ValueError:
-                printError("Illegal dec CONST: %s in line: %d\n\t%s"
+                printErrorAndExit("Illegal dec CONST: %s in line: %d\n\t%s"
                         %(value, ln, self.source[ln-1]))
             else:
                 return value_int
@@ -152,9 +375,9 @@ class Compiler(object):
     def removeComment(self, s):
         """docstring for removeComment
             remove comment starts with ';'
-            and spaces locates at each end of lines
+            and spaces locates at each beginning and end of lines
         """
-        return re.sub('\s*;.*$|\s+$', '',s)
+        return re.sub('\s*;.*$|\s+$|^\s+', '',s)
         pass
 
     def dprint(self, s):
@@ -165,17 +388,20 @@ class Compiler(object):
 
 def printWarning(s):
     """docstring for printWarning"""
+    global warning_cnt
     print("[Warning]: "+s)
     warning_cnt += 1
     pass
 
-def printError(s):
-    """docstring for printError"""
+def printErrorAndExit(s):
+    """docstring for printErrorAndExit"""
     sys.exit("[Error]:"+s)
     pass
 
 def main():
     """docstring for main"""
+    global warning_cnt
+
     apsr = argparse.ArgumentParser()
     apsr.add_argument("-s", "--source",
             help = "Indicate input asm source file.")
@@ -219,8 +445,10 @@ def main():
     fd.close()
 
     cc.parseSource()
+    cc.compile()
 
-    print("Compile done!! %d warning(s)" %warning_cnt)
+
+    print("Compile done!!\t%d warning(s)" %warning_cnt)
 
 if __name__ == '__main__':
     main()
