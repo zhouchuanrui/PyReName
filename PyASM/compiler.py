@@ -2,6 +2,7 @@ import re
 import sys
 import argparse
 
+warning_cnt = 0
 
 class Instruction(object):
     """docstring for Instruction"""
@@ -44,6 +45,7 @@ class Compiler(object):
         sp = re.compile(r'\s*,?\s*')
         illegal_char = re.compile(r'[^_a-zA-Z0-9.,+\-:$ ]')
         ln = 0
+        current_addr = 0
         for line in self.source:
             ln += 1
             if illegal_char.findall(line):
@@ -56,14 +58,29 @@ class Compiler(object):
             if tokens[0].lower() == '.local':
                 self.parseMacro(tokens[1:], ln)
             elif tokens[0].lower() == '.org':
+                current_addr = self.parseOrg(tokens[1:], ln)
                 pass
             else:
                 #print("Left line: "+line)
                 pass
         pass
 
+    def parseOrg(self, tokens, ln):
+        """docstring for parseOrg"""
+        if len(tokens) != 1:
+            printError("Wrong arguments number in .local definition in line: %d\n\t%s"
+                    %(ln, self.source[ln-1]))
+        
+        return self.parseConst(tokens[0], ln)
+        pass
+
     def parseMacro(self, tokens, ln):
-        """docstring for parseMacros"""
+        """docstring for parseMacros
+            parse <.local macro value> type macro definition
+            recursive marcro supported
+            value should be digital const only
+            store results in macros dict
+        """
         if len(tokens) != 2:
             printError("Wrong arguments number in .local definition in line: %d\n\t%s"
                     %(ln, self.source[ln-1]))
@@ -149,6 +166,7 @@ class Compiler(object):
 def printWarning(s):
     """docstring for printWarning"""
     print("[Warning]: "+s)
+    warning_cnt += 1
     pass
 
 def printError(s):
@@ -202,7 +220,7 @@ def main():
 
     cc.parseSource()
 
-    print("Compile done!!")
+    print("Compile done!! %d warning(s)" %warning_cnt)
 
 if __name__ == '__main__':
     main()
