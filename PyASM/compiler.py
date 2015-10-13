@@ -60,7 +60,7 @@ class Compiler(object):
     def parseSource(self):
         """docstring for parseSource"""
         sp = re.compile(r'\s*,?\s*')
-        illegal_char = re.compile(r'[^_a-zA-Z0-9.,+\-:$ ]')
+        illegal_char = re.compile(r'[^_a-zA-Z0-9.,+\-:$\s]')
         ln = 0
         current_addr = 0
         for line in self.source:
