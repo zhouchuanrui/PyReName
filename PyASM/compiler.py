@@ -34,7 +34,7 @@ class Compiler(object):
         self.arg = arg
         self.instructions = {} # {opcode:Instruction object} style
         self.source = []
-        self.debug_flag = 1
+        self.debug_flag = None
         self.macros = {} # {macro:(define_line_number, const_int)} type
         self.addr_labels = {} # {label:(address, define_line_number)} type
         self.rom_codes = {} # {addr:(DB|INS, ln, tokens)}
@@ -452,6 +452,7 @@ def main():
     fd.close()
 
     print("Compile done!!\t%d warning(s)" %warning_cnt)
+    print("Abin stored in file: ", output_file)
 
 if __name__ == '__main__':
     main()
