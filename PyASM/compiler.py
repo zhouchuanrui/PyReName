@@ -113,7 +113,7 @@ class Compiler(object):
             if code_type == 'DB':
                 self.compiled_abin[code_addr] = self.compileDB(v)
             else:
-                ins_obj = self.instructions[tokens[0]]
+                ins_obj = self.instructions[tokens[0].lower()]
                 if ins_obj.word_len == 2:
                     two_word = self.compileTwoWordIns(ins_obj, tokens, ln, code_addr)
                     self.compiled_abin[code_addr] = two_word[0]
