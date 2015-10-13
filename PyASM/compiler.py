@@ -39,7 +39,7 @@ class Compiler(object):
         self.addr_labels = {} # {label:(address, define_line_number)} type
         self.rom_codes = {} # {addr:(DB|INS, ln, tokens)}
         self.compiled_abin = []
-        self.addr_limit = 2**11 - 1 # 2KB
+        self.addr_limit = 2**10 - 1 # 1KB
         self.word_len = 14
         
     def getInstruction(self, name, opcode, word_len, opr1_len, opr2_len):
@@ -132,7 +132,7 @@ class Compiler(object):
             printErrorAndExit("Wrong oprands number in line: %d\n\t%s"
                     %(ln, self.source[ln-1]))
 
-        opc, opr2, opr1 = tokens
+        opc, opr1, opr2 = tokens
         regex = re.compile(r'[^01]+')
         abin = regex.sub('', ins_obj.opcode)
 
@@ -154,7 +154,7 @@ class Compiler(object):
         else:
             data2 = self.parseConst(opr2, ln) 
 
-        abin = abin + self.compileData(data1, ins_obj.opr1_len, ln) + self.compileData(data2, ins_obj.opr2_len, ln)
+        abin = abin + self.compileData(data2, ins_obj.opr2_len, ln) + self.compileData(data1, ins_obj.opr1_len, ln) 
 
         if len(abin) != self.word_len:
             ins_obj.printInstruction()
@@ -447,6 +447,9 @@ def main():
     cc.parseSource()
     cc.compile()
 
+    fd = open(output_file, 'w')
+    fd.writelines(l+'\n' for l in cc.compiled_abin)
+    fd.close()
 
     print("Compile done!!\t%d warning(s)" %warning_cnt)
 
