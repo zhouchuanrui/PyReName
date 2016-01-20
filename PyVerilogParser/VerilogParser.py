@@ -48,6 +48,16 @@ class VerilogParser(object):
         regex = re.compile(pattern, re.MULTILINE|re.DOTALL)
         return regex.sub("", src_str)
 
+    def escapeParameterPrototype(self, src_str):
+        """remove parameter prototype in module declare and instantiation
+            module module_name #(...) (...)
+            module_name #(...) inst_name
+            do not deal with #(.a (a)) type
+        """
+        pattern = r"#\s*\(.+?\)"
+        regex = re.compile(pattern, re.DOTALL)
+        return regex.sub("", src_str)
+
     def escapeCompileDirective(self, src_str):
         """remove one-line compile directives
             `define
@@ -162,6 +172,7 @@ class VerilogParser(object):
         src = self.escapeCommentAndQuote(src)
         src = self.escapeCompileDirective(src)
         src = self.escapeBeginEnd(src)
+        src = self.escapeParameterPrototype(src)
         #if file == "../../rtl/ip/EO001K14PA180SC02.v":
             #src = self.escapeBeginEnd(src)
             #print src
