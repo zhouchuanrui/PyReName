@@ -24,7 +24,7 @@ class OneToFiles(object):
     def fileUnzip(self):
         """docstring for fileUnzip"""
         buf = ""
-        fdr = open(key_file, "r")
+        fdr = open(self.key_file, "r")
         content_lines = fdr.read().splitlines()
         fdr.close()
         self.cdToDefaultDir()
